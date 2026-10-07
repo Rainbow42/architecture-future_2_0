@@ -38,10 +38,14 @@ for (const row of aggregates.split('\n').filter(line => /^\| [^|]+ \/ [A-Z][A-Za
   }
 }
 
-const diagramNames = ['bounded-contexts', 'event-storming'];
-for (const name of diagramNames) {
-  const source = path.join(root, 'Task4Advanced', `${name}.puml`);
-  const svg = path.join(root, 'Task4Advanced', `${name}.svg`);
+const diagrams = ['Task3Advanced', 'Task4Advanced'].flatMap(directory =>
+  readdirSync(path.join(root, directory))
+    .filter(file => file.endsWith('.puml'))
+    .map(file => path.join(directory, file)),
+);
+for (const name of diagrams) {
+  const source = path.join(root, name);
+  const svg = source.replace(/\.puml$/, '.svg');
   execFileSync('plantuml', ['-checkonly', source], { stdio: 'pipe' });
   execFileSync('xmllint', ['--noout', svg], { stdio: 'pipe' });
   const image = readFileSync(svg, 'utf8');
@@ -51,4 +55,16 @@ for (const name of diagramNames) {
   }
 }
 
-console.log(`PASS: ${documents.length} Markdown documents, ${linkCount} local links, ${eventNames.size} event contracts, ${diagramNames.length} diagrams`);
+const risks = readFileSync(path.join(root, 'Task3Advanced/risks.md'), 'utf8');
+const riskRows = [...risks.matchAll(/^\| ([ATO]\d+) \| [^|]+ \| ([123]) \/ ([123]) \/ (\d+) \|/gm)];
+assert(riskRows.length > 0, 'Risk register is empty');
+assert.equal(new Set(riskRows.map(row => row[1])).size, riskRows.length, 'Duplicate risk IDs');
+const matrix = new Map([...risks.matchAll(/^\| ([123]) \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$/gm)]
+  .map(row => [Number(row[1]), row.slice(2)]));
+for (const [, id, probability, impact, score] of riskRows) {
+  assert.equal(Number(probability) * Number(impact), Number(score), `${id}: incorrect score`);
+  const cell = matrix.get(Number(probability))?.[Number(impact) - 1];
+  assert(cell?.split(',').map(value => value.trim()).includes(id), `${id}: missing or misplaced in risk matrix`);
+}
+
+console.log(`PASS: ${documents.length} Markdown documents, ${linkCount} local links, ${eventNames.size} event contracts, ${diagrams.length} diagrams, ${riskRows.length} risks`);

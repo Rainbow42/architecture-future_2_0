@@ -1,0 +1,55 @@
+@startuml
+title C4 L2 — платформа продуктов данных, целевое состояние
+left to right direction
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam wrapWidth 220
+skinparam maxMessageSize 160
+skinparam componentStyle rectangle
+
+actor "Сотрудник группы\n[Person]" as User
+rectangle "Доменные системы / сборщики\n[External Software Systems]\nГотовят разрешённые продукты\nвнутри своего контура" as Domains #EEEEEE
+rectangle "Корпоративный IAM\n[External Software System]\nOIDC / MFA" as IAM #EEEEEE
+rectangle "Power BI\n[External Software System]\nОдобренные рабочие пространства" as BI #EEEEEE
+
+package "Платформа продуктов данных [Software System]" #F5F9FF {
+  rectangle "Web-портал\n[Container: React / TypeScript]\nКаталог, срезы, заявки" as Web #DAE8FC
+  rectangle "API портала\n[Container: Java / Spring Boot]\nАвторизация среза, запрос, экспорт" as API #DAE8FC
+  rectangle "Каталог и политики\n[Container: Java / Spring Boot]\nКонтракты, владельцы, версии,\nправа и отзыв" as Catalog #DAE8FC
+  database "Метаданные\n[Container: PostgreSQL]\nКаталог, политики, публикации,\noutbox; отдельные схемы / роли" as Meta #D5E8D4
+  rectangle "Сервис публикации\n[Container: Java / Spring Boot]\nПриём, валидация, фиксация версии" as Publish #DAE8FC
+  database "Наборы продуктов\n[Container: S3-compatible]\nПроверенные неизменяемые версии" as Objects #D5E8D4
+  queue "Брокер продуктов\n[Container: Kafka]\nDataProductPublished / Withdrawn\nбез операционных payload" as Kafka #DAE8FC
+  rectangle "Загрузчик витрин\n[Container: Java consumer]\nХеш, идемпотентная загрузка" as Loader #DAE8FC
+  database "Витрины\n[Container: ClickHouse]\nАгрегаты по версии и организации" as Marts #D5E8D4
+  database "Журнал аудита\n[Container: separate S3 store]\nРешения, версии и объёмы;\nбез токенов и результата запроса" as Audit #D5E8D4
+}
+
+User --> Web : HTTPS
+Web --> API : HTTPS / JSON
+API --> IAM : OIDC / JWKS
+API --> Catalog : HTTPS, политика / готовность
+API --> Marts : SQL, серверные фильтры
+API --> Audit : S3 API, аудит доступа
+BI --> API : HTTPS, разрешённый экспорт
+Domains --> Publish : HTTPS, product / version / manifest
+Publish --> IAM : проверка сервисной личности
+Publish --> Catalog : HTTPS, контракт / допуск
+Catalog --> Meta : SQL, каталог и политики
+Publish --> Meta : SQL, публикация + outbox
+Publish --> Objects : S3 API, только валидный набор
+Publish --> Kafka : Kafka protocol, outbox relay
+Publish --> Audit : S3 API, факт публикации
+Kafka --> Loader : Kafka protocol, уведомление
+Loader --> Catalog : HTTPS, допуск / отметка готовности
+Loader --> Objects : S3 API, чтение по манифесту
+Loader --> Marts : SQL, загрузка версии
+Catalog --> Kafka : outbox relay, отзыв версии
+Catalog --> Audit : S3 API, изменение прав / отзыв
+
+legend bottom
+  Голубой — приложение / брокер; зелёный — хранилище; серый — внешняя система.
+  У каждого приложения собственная сервисная роль. Клинические / банковские операционные топики здесь отсутствуют.
+  Показаны логические контейнеры, не отдельные ВМ и не реплики продуктивного кластера.
+endlegend
+@enduml
