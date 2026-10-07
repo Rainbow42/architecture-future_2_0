@@ -67,4 +67,12 @@ for (const [, id, probability, impact, score] of riskRows) {
   assert(cell?.split(',').map(value => value.trim()).includes(id), `${id}: missing or misplaced in risk matrix`);
 }
 
-console.log(`PASS: ${documents.length} Markdown documents, ${linkCount} local links, ${eventNames.size} event contracts, ${diagrams.length} diagrams, ${riskRows.length} risks`);
+const radar = readFileSync(path.join(root, 'Task5Advanced/tech-radar.md'), 'utf8');
+const radarMapIds = [...radar.split('## Adopt:')[0].matchAll(/[|;] ([ATSH]\d+) /g)].map(match => match[1]);
+const radarDetailIds = [...radar.matchAll(/^\| ([ATSH]\d+) \|/gm)].map(match => match[1]);
+assert.equal(new Set(radarMapIds).size, radarMapIds.length, 'Duplicate radar map IDs');
+assert.equal(new Set(radarDetailIds).size, radarDetailIds.length, 'Duplicate radar detail IDs');
+assert.deepEqual([...radarMapIds].sort(), [...radarDetailIds].sort(), 'Radar map and details differ');
+assert.deepEqual([...new Set(radarMapIds.map(id => id[0]))].sort(), ['A', 'H', 'S', 'T'], 'Missing radar rings');
+
+console.log(`PASS: ${documents.length} Markdown documents, ${linkCount} local links, ${eventNames.size} event contracts, ${diagrams.length} diagrams, ${riskRows.length} risks, ${radarDetailIds.length} radar decisions`);
