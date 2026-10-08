@@ -1,0 +1,65 @@
+pipeline {
+    agent { label 'future-terraform' }
+    options {
+        skipDefaultCheckout()
+        disableConcurrentBuilds()
+        disableRestartFromStage()
+        timeout(time: 24, unit: 'HOURS')
+    }
+    parameters {
+        string(name: 'APPROVED_COMMIT', defaultValue: '', description: 'Full SHA of the reviewed source commit')
+    }
+    stages {
+        stage('Prepare') {
+            steps {
+                checkout scm
+                script {
+                    if (!(env.TF_ENVIRONMENT in ['dev', 'stage', 'prod'])) {
+                        error('Configure a fixed TF_ENVIRONMENT for this job')
+                    }
+                    if (env.TF_DEPLOYMENT_ENABLED != 'true' || !env.TF_APPROVERS?.trim()) {
+                        error('Deployment is disabled or approvers are not configured')
+                    }
+                    env.TF_SOURCE_REVISION = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+                    if (!(params.APPROVED_COMMIT ==~ /[a-f0-9]{40}/) || params.APPROVED_COMMIT != env.TF_SOURCE_REVISION) {
+                        error('Checkout differs from the reviewed commit')
+                    }
+                    env.TF_RUN_ID = env.BUILD_NUMBER
+                    env.TF_RUN_ATTEMPT = '1'
+                }
+                sh 'node Task2Advanced/checks.mjs'
+                sh 'node Task2Advanced/pipeline-checks.mjs'
+                sh 'terraform fmt -check -recursive Task1Advanced'
+            }
+        }
+        stage('Init and plan') {
+            options { timeout(time: 30, unit: 'MINUTES') }
+            steps {
+                withCredentials([
+                    usernamePassword(credentialsId: "tf-${env.TF_ENVIRONMENT}-state-plan", usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY'),
+                    string(credentialsId: "tf-${env.TF_ENVIRONMENT}-yc-plan", variable: 'YC_TOKEN')
+                ]) {
+                    sh 'node Task2Advanced/pipeline.mjs plan "$TF_ENVIRONMENT"'
+                }
+            }
+        }
+        stage('Approve saved plan') {
+            options { timeout(time: 12, unit: 'HOURS') }
+            steps {
+                input message: "Review the full private plan, SHA256, costs and commit ${env.TF_SOURCE_REVISION} for ${env.TF_ENVIRONMENT}. Apply this saved plan?",
+                    ok: 'Apply reviewed plan', submitter: env.TF_APPROVERS
+            }
+        }
+        stage('Apply') {
+            options { timeout(time: 30, unit: 'MINUTES') }
+            steps {
+                withCredentials([
+                    usernamePassword(credentialsId: "tf-${env.TF_ENVIRONMENT}-state-apply", usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY'),
+                    string(credentialsId: "tf-${env.TF_ENVIRONMENT}-yc-apply", variable: 'YC_TOKEN')
+                ]) {
+                    sh 'node Task2Advanced/pipeline.mjs apply "$TF_ENVIRONMENT"'
+                }
+            }
+        }
+    }
+}
