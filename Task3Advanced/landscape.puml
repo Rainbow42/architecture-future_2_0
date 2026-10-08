@@ -1,0 +1,52 @@
+@startuml
+title Будущее 2.0 — целевой ландшафт и переход, горизонт 3 года
+left to right direction
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam wrapWidth 210
+skinparam maxMessageSize 180
+skinparam componentStyle rectangle
+
+actor "Сотрудник группы\n[Person]\nАналитика своего бизнеса" as User
+rectangle "Корпоративный IAM\n[Software System]\nСотрудники, OIDC / MFA" as IAM #EEEEEE
+
+package "Изолированные операционные системы" {
+  rectangle "Клиники\n[Software System]\nПациенты, запись, расчёты\nДоменные приложения и БД" as Clinics #FFF1F0
+  rectangle "Медицинская помощь и ИИ\n[Software System]\nМедкарты, исследования, Python AI\nОтдельный клинический контур" as Medical #FFF1F0
+  rectangle "Банк\n[Software System]\nКредитование и проводки\nGo / Java и банковские БД" as Bank #FFF7DD
+  rectangle "Фарма, электроника, снабжение\n[Software Systems]\nПартии, устройства и остатки" as Production #EDF3FF
+  rectangle "Корпоративные финансы\nи поддерживающие системы\n[Software Systems]\nКонсолидация и сводные затраты" as Finance #EDF3FF
+}
+
+rectangle "Платформа продуктов данных\n[Software System]\nПортал, каталог, публикация\nи разрешённые витрины" as Analytics #DAE8FC
+rectangle "Power BI\n[Software System]\nОдобренные отчёты;\nэкспорт только по разрешению" as BI #EEEEEE
+
+package "Переходный контур, вывод по функциям" #F5F5F5 {
+  rectangle "PowerBuilder / SQL Server 2008\n[Legacy System]\nЕщё не перенесённые правила и данные" as Legacy
+  rectangle "Camel и доменные ACL-адаптеры\n[Integration Systems]\nПреобразование старых контрактов" as Adapters
+}
+
+User --> Analytics : HTTPS, выбор разрешённого среза
+Analytics --> IAM : OIDC, проверка личности
+Clinics --> Medical : клинический API,\nправа на конкретного пациента
+Clinics --> Analytics : API публикации;\nтолько сводки загрузки и оплат
+Bank --> Analytics : API публикации;\nагрегаты без заёмщика
+Production --> Analytics : API публикации;\nвыпуск и остатки
+Finance --> Analytics : API публикации;\nсводные затраты / закрытие
+Finance <-- Analytics : API, разрешённые сводки доменов
+BI --> Analytics : API экспорта, scoped service role
+Legacy --> Adapters : контролируемый экспорт / журнал
+Adapters ..> Clinics : переносимая функция,\nодин писатель
+
+note bottom of Medical
+  Нет канала в общую аналитику:
+  ни документов, ни результатов,
+  ни embeddings / ссылок на них.
+end note
+
+legend bottom
+  Software System — самостоятельная система; внутренности раскрыты на C4 L2.
+  Пунктир — временная интеграция. Camel не становится целевой общей шиной.
+  Домен публикует согласованный продукт; общая платформа не читает его сырые таблицы.
+endlegend
+@enduml

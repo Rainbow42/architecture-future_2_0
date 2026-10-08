@@ -1,0 +1,21 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::REPLACE_BUCKET",
+      "Condition": { "StringLike": { "s3:prefix": "sprint11/REPLACE_ENVIRONMENT/*" } }
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject"],
+      "Resource": "arn:aws:s3:::REPLACE_BUCKET/sprint11/REPLACE_ENVIRONMENT/terraform.tfstate"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::REPLACE_BUCKET/sprint11/REPLACE_ENVIRONMENT/terraform.tfstate.tflock"
+    }
+  ]
+}

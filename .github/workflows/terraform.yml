@@ -1,0 +1,41 @@
+name: Terraform validation
+
+on:
+  pull_request:
+  push:
+    branches: [main, codex/sprint-11]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+        with:
+          terraform_version: '1.12.2'
+          terraform_wrapper: false
+      - run: node Task2Advanced/checks.mjs
+      - run: node Task2Advanced/pipeline-checks.mjs
+      - run: node scripts/calculate-tco.mjs --check
+      - run: terraform fmt -check -recursive Task1Advanced
+      - name: Validate and plan with a mock provider
+        shell: bash
+        run: |
+          set -euo pipefail
+          for environment in dev stage prod; do
+            directory="Task1Advanced/envs/$environment"
+            terraform -chdir="$directory" init -backend=false -input=false -lockfile=readonly
+            terraform -chdir="$directory" validate
+            mkdir -p "$directory/.terraform/checks"
+            cp Task1Advanced/checks/environment.tftest.hcl "$directory/.terraform/checks/"
+            terraform -chdir="$directory" test -test-directory=.terraform/checks -var-file="$environment.tfvars"
+          done

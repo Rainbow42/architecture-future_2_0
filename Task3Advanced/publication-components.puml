@@ -1,0 +1,51 @@
+@startuml
+title C4 L3 — сервис публикации
+left to right direction
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam wrapWidth 210
+skinparam maxMessageSize 150
+skinparam componentStyle rectangle
+
+rectangle "Доменный сборщик\n[External Software System]" as Producer #EEEEEE
+rectangle "IAM\n[External Software System]" as IAM #EEEEEE
+rectangle "Каталог и политики\n[Container]" as Catalog #EEEEEE
+database "Метаданные / outbox\n[Container: PostgreSQL]" as Meta #EEEEEE
+database "Наборы продуктов\n[Container: S3-compatible]" as Objects #EEEEEE
+queue "Брокер продуктов\n[Container: Kafka]" as Kafka #EEEEEE
+database "Журнал аудита\n[Container: S3]" as Audit #EEEEEE
+
+package "Сервис публикации [Container: Java / Spring Boot]" #F5F9FF {
+  component "Приём и аутентификация\n[Component: HTTP controller]\nЛимит размера, сервисная личность" as Ingress #DAE8FC
+  component "Допуск продукта\n[Component: policy client]\nВладелец, регион, активная схема" as Admission #DAE8FC
+  component "Валидатор контракта\n[Component: schema validator]\nПоля, типы, справочники,\nдопустимые срезы" as Validator #DAE8FC
+  component "Координатор публикации\n[Component: state machine]\nКлюч версии и хеш;\nобъект → транзакция → готовность" as Coordinator #DAE8FC
+  component "Outbox relay\n[Component: background worker]\nПовтор до подтверждения брокера" as Relay #DAE8FC
+  component "Сверщик объектов\n[Component: scheduled worker]\nУдаление незарегистрированных\nверсий по сроку" as Reconciler #DAE8FC
+}
+
+Producer --> Ingress : HTTPS, согласованный продукт
+Ingress --> IAM : OIDC / проверка личности
+Ingress --> Admission : product / owner / region
+Admission --> Catalog : HTTPS, контракт и допуск
+Admission --> Validator : активная schema_version
+Validator --> Coordinator : только проверенный набор
+Coordinator --> Objects : S3 API, неизменяемый объект
+Coordinator --> Meta : SQL, publication + events / audit outbox\nодна транзакция
+Relay --> Meta : SQL, незавершённый outbox
+Relay --> Kafka : Kafka protocol, повторяемое событие
+Relay --> Audit : S3 API, версия / решение с повтором
+Reconciler --> Meta : SQL, зарегистрированные манифесты
+Reconciler --> Objects : S3 API, сверка / очистка
+
+note bottom of Validator
+  Отказ не сохраняет payload в общий staging.
+  Карантин — у домена; в аудит идёт код причины.
+end note
+
+legend bottom
+  Компоненты живут внутри одного приложения; не отдельные микросервисы.
+  Запись в S3 и SQL не атомарна: состояние публикации и сверщик закрывают окно сбоя.
+  Бизнес-формулы остаются в доменном сборщике, за пределами этого контейнера.
+endlegend
+@enduml

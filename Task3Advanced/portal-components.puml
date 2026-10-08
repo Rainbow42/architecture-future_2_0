@@ -1,0 +1,45 @@
+@startuml
+title C4 L3 — API портала
+top to bottom direction
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam wrapWidth 210
+skinparam maxMessageSize 150
+skinparam componentStyle rectangle
+
+rectangle "Web-портал / разрешённый BI\n[Container / External System]" as Client #EEEEEE
+rectangle "Корпоративный IAM\n[External Software System]" as IAM #EEEEEE
+rectangle "Каталог и политики\n[Container]" as Catalog #EEEEEE
+database "Витрины\n[Container: ClickHouse]" as Marts #EEEEEE
+database "Журнал аудита\n[Container: S3]" as Audit #EEEEEE
+
+package "API портала [Container: Java / Spring Boot]" #F5F9FF {
+  component "Контроллер и сессия\n[Component: HTTP / OIDC]\nПроверка личности и лимитов" as Controller #DAE8FC
+  component "Проверка доступа\n[Component: policy client]\nОрганизация, регион, продукт,\nдействие и отзыв" as Access #DAE8FC
+  component "Планировщик запроса\n[Component: query planner]\nРазрешённые меры и срезы,\nобщий период / готовые версии" as Planner #DAE8FC
+  component "Исполнитель\n[Component: SQL adapter]\nПараметризованный SQL,\nфильтры, квоты и таймаут" as Executor #DAE8FC
+  component "Проверка выдачи\n[Component: result gate]\nРазмер группы, свежесть,\nповторная проверка прав" as ResultGate #DAE8FC
+  component "Аудит\n[Component: audit writer]\nКто, продукт, версия,\nдействие и объём" as AuditWriter #DAE8FC
+}
+
+Client --> Controller : HTTPS / JSON, без SQL
+Controller --> IAM : OIDC / JWKS
+Controller --> Access : доверенная личность
+Access --> Catalog : HTTPS, политика / отзыв
+Access --> Planner : разрешённые срезы и границы
+Planner --> Catalog : HTTPS, версии и watermark
+Planner --> Executor : план с обязательными фильтрами
+Executor --> Marts : SQL, служебная роль
+Executor --> ResultGate : ограниченный результат
+ResultGate --> Access : проверка перед выдачей
+ResultGate --> Controller : допущенный результат\nили отказ
+Access --> AuditWriter : решение о доступе
+ResultGate --> AuditWriter : версии / объём / отказ
+AuditWriter --> Audit : S3 API, без payload / токенов
+
+legend bottom
+  Компоненты — части API, не отдельные развёртывания.
+  Клиентский tenant_id не задаёт полномочия; отказ каталога закрывает доступ.
+  Для тяжёлой выгрузки те же проверки повторяются перед выдачей файла.
+endlegend
+@enduml
