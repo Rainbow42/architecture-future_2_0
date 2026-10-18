@@ -28,4 +28,14 @@ run "environment_wiring" {
     condition     = length(yandex_vpc_security_group.vm.ingress) == 0
     error_message = "Inbound access must stay closed without an explicit allowlist."
   }
+
+  assert {
+    condition     = var.cores == 2 && var.memory_gb <= 16
+    error_message = "Training examples must fit the observed zonal CPU and RAM quotas."
+  }
+
+  assert {
+    condition     = var.boot_disk_type == "network-hdd" && var.data_disk_type == "network-hdd" && var.boot_disk_size_gb + var.data_disk_size_gb <= 20
+    error_message = "Training disks must fit the observed 20 GB HDD quota per zone."
+  }
 }
