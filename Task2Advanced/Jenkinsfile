@@ -21,20 +21,13 @@ pipeline {
                     if (!env.TF_JOB_CONFIG_FILE?.startsWith('/')) {
                         error('Configure a private absolute job-settings file on the dedicated agent')
                     }
-                    def configurations = new groovy.json.JsonSlurperClassic().parseText(readFile(env.TF_JOB_CONFIG_FILE))
-                    def configuration = configurations[env.JOB_NAME]
-                    def requiredSettings = ['TF_DEPLOYMENT_ENABLED', 'TF_ENVIRONMENT', 'TF_APPROVERS',
-                        'TF_STATE_ENDPOINT', 'TF_STATE_BUCKET', 'TF_STATE_REGION', 'TF_STATE_ENCRYPTION', 'TF_STATE_KMS_KEY_ID',
-                        'TF_PLAN_DIRECTORY', 'TF_VAR_folder_id', 'TF_VAR_boot_image_id', 'TF_VAR_ssh_public_key',
-                        'TF_YC_PLAN_SERVICE_ACCOUNT_ID', 'TF_YC_APPLY_SERVICE_ACCOUNT_ID']
-                    if (!(configuration instanceof Map) || configuration.keySet() != requiredSettings.toSet()) {
-                        error('Job settings are missing or contain unexpected variables')
-                    }
-                    configuration.each { name, value ->
-                        if (!(value instanceof String) || !value.trim()) {
-                            error('Job settings must be nonempty strings')
+                    def settings = sh(script: 'node Task2Advanced/job-settings.mjs "$TF_JOB_CONFIG_FILE" "$JOB_NAME"', returnStdout: true).trim()
+                    settings.split('\n').each { setting ->
+                        def separator = setting.indexOf('=')
+                        if (separator < 1) {
+                            error('Invalid fixed job setting')
                         }
-                        env[name] = value
+                        env[setting.substring(0, separator)] = setting.substring(separator + 1)
                     }
                     if (!(env.TF_ENVIRONMENT in ['dev', 'stage', 'prod']) || env.JOB_BASE_NAME != "future-deploy-${env.TF_ENVIRONMENT}") {
                         error('The job name must match its fixed environment')
@@ -48,6 +41,7 @@ pipeline {
                 sh 'node Task2Advanced/checks.mjs'
                 sh 'node Task2Advanced/pipeline-checks.mjs'
                 sh 'node Task2Advanced/iam-checks.mjs'
+                sh 'node Task2Advanced/job-settings-checks.mjs'
                 sh 'npm ci --prefix Task2Advanced --ignore-scripts --no-audit --no-fund'
                 sh 'terraform fmt -check -recursive Task1Advanced'
             }
