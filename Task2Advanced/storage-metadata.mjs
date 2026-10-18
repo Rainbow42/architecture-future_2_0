@@ -26,8 +26,12 @@ export function verifyStorageMetadata(settings, metadata) {
   const deniesHttp = statements.some(statement => {
     const resources = [statement.Resource].flat();
     const actions = [statement.Action].flat();
+    const conditions = statement.Condition ?? {};
+    const booleanConditions = conditions.Bool ?? {};
+    const transport = Object.entries(booleanConditions).find(([key]) => key.toLowerCase() === 'aws:securetransport');
     return statement.Effect === 'Deny' && statement.Principal === '*'
-      && ['false', false].includes(statement.Condition?.Bool?.['aws:SecureTransport'])
+      && Object.keys(conditions).length === 1 && Object.keys(booleanConditions).length === 1
+      && transport && ['false', false].includes(transport[1])
       && actions.some(action => action === '*' || action === 's3:*')
       && resources.includes(`arn:aws:s3:::${settings.bucket}`)
       && resources.includes(`arn:aws:s3:::${settings.bucket}/*`);

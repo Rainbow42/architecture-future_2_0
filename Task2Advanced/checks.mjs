@@ -54,6 +54,9 @@ const storage = {
 };
 const settings = { bucket: 'example-state', mode: 'bucket-kms', keyId: kmsVariables.TF_STATE_KMS_KEY_ID };
 assert.equal(verifyStorageMetadata(settings, storage).encryption, 'aws:kms');
+const lowercaseTransport = structuredClone(storage);
+lowercaseTransport.policy.Policy = JSON.stringify({ Statement: [{ Effect: 'Deny', Principal: '*', Action: '*', Resource: ['arn:aws:s3:::example-state', 'arn:aws:s3:::example-state/*'], Condition: { Bool: { 'aws:securetransport': 'false' } } }] });
+assert.equal(verifyStorageMetadata(settings, lowercaseTransport).insecureTransport, false);
 for (const mutate of [
   value => { value.versioning.Status = 'Suspended'; },
   value => { value.encryption.ServerSideEncryptionConfiguration.Rules = []; },
@@ -61,6 +64,8 @@ for (const mutate of [
   value => { value.acl.Grants.push({ Grantee: { URI: 'synthetic-public-group' } }); },
   value => { value.policy.Policy = JSON.stringify({ Statement: [{ Effect: 'Allow', Principal: '*', Action: 's3:*', Resource: '*' }] }); },
   value => { value.policy.Policy = JSON.stringify({ Statement: [] }); },
+  value => { const policy = JSON.parse(value.policy.Policy); policy.Statement[0].Condition.StringEquals = { 'aws:userid': 'only-one-user' }; value.policy.Policy = JSON.stringify(policy); },
+  value => { const policy = JSON.parse(value.policy.Policy); policy.Statement[0].Condition.Bool['aws:PrincipalIsAWSService'] = 'false'; value.policy.Policy = JSON.stringify(policy); },
 ]) {
   const changed = structuredClone(storage);
   mutate(changed);

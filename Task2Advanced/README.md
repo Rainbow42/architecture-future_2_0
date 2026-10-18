@@ -1,6 +1,6 @@
 # Удалённое состояние и CI/CD
 
-Подготовила backend и pipeline. Созданы приватный бакет с versioning и KMS, отдельные state-аккаунты, локальный Jenkins и изолированный Linux-агент без монтирования домашнего каталога. Jenkinsfile прошёл настоящую компиляцию. Права state-аккаунтов ещё не настроены; S3-операции, блокировка, Jenkins input и облачный apply пока не проверены.
+Подготовила backend и pipeline. Созданы приватный бакет с versioning, отдельный ключ KMS, state-аккаунты с точечными правами, локальный Jenkins и изолированный Linux-агент без монтирования домашнего каталога. Jenkinsfile прошёл настоящую компиляцию. Реальное чтение настроек S3 выявило отсутствие шифрования по умолчанию; запись state не выполнялась. Блокировка, Jenkins input и облачный apply пока не проверены.
 
 ## Backend
 
@@ -22,7 +22,11 @@
 
 Для Yandex Object Storage предусмотрен `TF_STATE_ENCRYPTION=bucket-kms` с обязательным `TF_STATE_KMS_KEY_ID`. Terraform 1.12.2 при `encrypt=true` посылает AES256, а Object Storage поддерживает aws:kms; проверка `kms_key_id` этой версии Terraform не принимает собственный ID ключа YC. Поэтому в этом режиме клиент не задаёт SSE-заголовок (`encrypt=false` в HCL), а шифрование выполняется обязательной настройкой бакета. Это не отключение шифрования бакета. [Проверка backend](backend-preflight.mjs) до запуска Terraform должна прочитать настройки и подтвердить aws:kms с точным ID ключа, versioning, отсутствие групповых ACL и публичных Allow, запрет HTTP в policy. При любой ошибке Terraform не запускается; режим и ID ключа входят в хеш контекста сохранённого плана. Настоящую совместимость ещё предстоит проверить.
 
-Для preflight требуются GetBucketAcl, GetBucketVersioning, GetEncryptionConfiguration и GetBucketPolicy. В YC последнее требует отдельной роли `storage.configViewer` на бакет: она не даёт содержимое объектов, но раскрывает их имена и настройки. Такой доступ к метаданным всех сред отдельно запрошен и пока не настроен. Роль изменения настроек бакета для state-аккаунтов не нужна.
+Для preflight требуются GetBucketAcl, GetBucketVersioning, GetEncryptionConfiguration и GetBucketPolicy. В YC последнее требует отдельной роли `storage.configViewer` на бакет: она не даёт содержимое объектов, но раскрывает их имена и настройки. Такой доступ к метаданным всех сред отдельно согласован и применён вместе с явными S3-read разрешениями. Роль изменения настроек бакета для state-аккаунтов не нужна.
+
+На реальном backend применены точные state/lock/verification-пути трёх identities, удаление только lock/проверочных объектов и запрет HTTP. Подтверждено чтение policy, ACL и Status=Enabled для versioning всеми тремя identities. GetBucketEncryption вернул ServerSideEncryptionConfigurationNotFoundError: существование ключа KMS само по себе не включает шифрование бакета. Настоящий preflight завершился с отказом для каждой среды; state и пробные объекты не записывались.
+
+По отдельному разрешению явно сохранён прежний доступ личной владелицы к одному бакету. Консоль использует служебный прокси, поэтому персональное правило не открыло настройки шифрования. Непрозрачное готовое правило «доступ из консоли» не добавлялось. Для включения KMS отдельно запрошен временный настройщик только с Get/PutEncryptionConfiguration, без доступа к объектам и с последующим отзывом ключа; он пока не создан.
 
 В [шаблоне identity policy](state-policy.example.json) заменяются `REPLACE_BUCKET` и `REPLACE_ENVIRONMENT`. Это шаблон разрешений для привязки к identity в MinIO/AWS, а не готовая bucket policy YC: последней нужны явные `Principal.CanonicalUser`, отдельный запрет HTTP и настройки доступа к метаданным. Разрешены ListBucket только своего префикса, Get/Put точного state и Get/Put/Delete точного lock-файла. Delete state не требуется. Для plan-identity Put state можно убрать после проверки bootstrap-поведения backend; запись/удаление lock-файла нужны и для plan. При необходимости KMS-права ограничиваются конкретным ключом. Политика не была применена к реальной учётной записи.
 
@@ -78,7 +82,7 @@ terraform -chdir=Task1Advanced/envs/dev init -input=false -backend-config=/absol
 | Username/password credentials | `tf-<среда>-state-plan`, `tf-<среда>-state-apply` | Access key / secret key своего state; подстановка в AWS-переменные |
 | Secret text credentials | `tf-<среда>-yc-plan`, `tf-<среда>-yc-apply` | YC_TOKEN: чтение для plan, ограниченное изменение для apply |
 
-Роли владельца организации не нужны. Точные cloud-роли и квоты ограничиваются учебным каталогом. Созданы три state-аккаунта без ролей на каталог; их статические ключи сохранены вне репозитория в приватных файлах. Права на префиксы и KMS ещё не выданы. В локальном Jenkins облачные credentials и deployment jobs не настроены. [Локальный CI](local-jenkins/README.md) не использует платную облачную ВМ.
+Роли владельца организации не нужны. Точные cloud-роли и квоты ограничиваются учебным каталогом. Созданы три state-аккаунта без ролей на каталог; их статические ключи сохранены вне репозитория в приватных файлах. Им выданы точные права на префиксы, чтение метаданных одного бакета и encrypt/decrypt одного KMS-ключа. Настройки бакета и ACL они менять не могут. В локальном Jenkins облачные credentials и deployment jobs не настроены. [Локальный CI](local-jenkins/README.md) не использует платную облачную ВМ.
 
 ## Восстановление
 
@@ -100,6 +104,8 @@ terraform fmt -check -recursive Task1Advanced
 
 Проверки контролируют разные ключи состояния, HTTPS, привязку plan к контексту, контрольную сумму, срок и безопасную сводку. Отдельный сценарий подменяет Terraform заглушкой и проверяет сохранённый план, запрет повторного apply, приватную аварийную диагностику и блокировку повторов. Он не доказывает работу настоящего Terraform и не обращается к S3/облаку.
 
+[Проверка S3](storage-checks.mjs) требует явного `--write-probes` и приватного `TF_STATE_CREDENTIALS_DIRECTORY` с файлами `state-dev.json`, `state-stage.json`, `state-prod.json`. Сначала проверяет metadata всех сред, только затем пишет синтетические объекты под новым `sprint11/<среда>/verification/<uuid>/`: шифрование объекта, две версии и чтение прежней версии, гонка conditional writes, шесть запретов чтения чужих пробных объектов. Очистка добавляет delete-маркеры, не удаляет версии навсегда. Настоящий state не используется. Скрипт пока прошёл только проверку синтаксиса: запуск записи отложен до включения шифрования. S3 conditional-write test не заменяет конкуренцию двух процессов Terraform.
+
 До сдачи на отдельно разрешённой учебной среде нужно:
 
 1. Проверить HTTPS, шифрование, versioning и отказ dev-identity при доступе к stage/prod.
@@ -108,7 +114,7 @@ terraform fmt -check -recursive Task1Advanced
 4. После проверки стоимости разрешить настоящее применение Task1; проверить ВМ, диски и outputs, сохранить несекретные подтверждения.
 5. Проверить восстановление из версии в пробном контуре. Удаление учебных ресурсов согласовать отдельно; диски не считать автоматически сохранёнными при destroy.
 
-Проект к сдаче не готов. Учебная среда и расходы в пределах гранта согласованы. Остались настройка минимальных backend-прав, реальные S3/lock-проверки, deployment jobs с ручным подтверждением и настоящее применение Task1. Создание аккаунтов, бакета и успешная компиляция Jenkinsfile не заменяют эти проверки.
+Проект к сдаче не готов. Учебная среда и расходы в пределах гранта согласованы. Остались разрешённое включение и проверка KMS-шифрования бакета, реальные S3/lock-проверки, deployment jobs с ручным подтверждением и настоящее применение Task1. Создание аккаунтов, бакета и успешная компиляция Jenkinsfile не заменяют эти проверки.
 
 Источники: [S3 backend и права](https://developer.hashicorp.com/terraform/language/backend/s3), [частичная конфигурация](https://developer.hashicorp.com/terraform/language/backend), [блокировка Yandex Cloud](https://yandex.cloud/ru/docs/terraform/tutorials/terraform-state-lock), [аутентификация YC](https://yandex.cloud/ru/docs/terraform/authentication), [Jenkins Pipeline](https://www.jenkins.io/doc/book/pipeline/syntax/), [ручной input](https://www.jenkins.io/doc/pipeline/steps/pipeline-input-step/), [Jenkins credentials](https://www.jenkins.io/doc/book/pipeline/jenkinsfile/).
 

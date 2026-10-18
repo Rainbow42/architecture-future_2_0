@@ -30,6 +30,6 @@ try {
     client.destroy();
   }
 } catch (error) {
-  process.stderr.write(`Backend security preflight failed (${error.name ?? 'Error'}). Inspect private diagnostics; no raw response was published.\n`);
+  process.stderr.write(`Backend security preflight failed (${error.name ?? 'Error'}). Security settings could not be verified; no raw response was published.\n`);
   process.exitCode = 1;
 }
