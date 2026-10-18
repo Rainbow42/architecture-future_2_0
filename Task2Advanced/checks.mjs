@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { backendConfig, backendHcl, digest, executionContext, planLifetimeMs, summarizePlan, verifyPlan } from './lib.mjs';
+import { verifyStorageMetadata } from './storage-metadata.mjs';
 
 const variables = {
   TF_STATE_ENDPOINT: 'https://state.example.invalid', TF_STATE_BUCKET: 'example-state', TF_STATE_REGION: 'us-east-1',
@@ -36,5 +37,34 @@ assert.throws(() => verifyPlan(metadata, context, plan, now + planLifetimeMs + 1
 assert.throws(() => verifyPlan(metadata, context, plan, now - 1));
 assert.notEqual(executionContext('dev', { ...variables, TF_VAR_folder_id: 'another-folder' }, configurations[0]).configuration, context.configuration);
 assert.deepEqual(summarizePlan({ resource_changes: [{ change: { actions: ['create'] } }, { change: { actions: ['delete', 'create'] } }], output_changes: { x: { actions: ['update'] } } }), { resources: { create: 1, 'delete/create': 1 }, outputs: 1 });
+
+const kmsVariables = { ...variables, TF_STATE_ENDPOINT: 'https://storage.yandexcloud.net', TF_STATE_ENCRYPTION: 'bucket-kms', TF_STATE_KMS_KEY_ID: 'a'.repeat(20) };
+const kmsBackend = backendConfig('dev', kmsVariables);
+assert.equal(kmsBackend.encrypt, false);
+assert.equal(kmsBackend.use_lockfile, true);
+assert.throws(() => backendConfig('dev', { ...kmsVariables, TF_STATE_KMS_KEY_ID: '' }));
+assert.throws(() => backendConfig('dev', { ...kmsVariables, TF_STATE_ENDPOINT: 'https://other.example.invalid' }));
+assert.throws(() => backendConfig('dev', { ...variables, TF_STATE_ENCRYPTION: 'none' }));
+assert.notEqual(executionContext('dev', kmsVariables, kmsBackend).configuration, executionContext('dev', { ...kmsVariables, TF_STATE_KMS_KEY_ID: 'b'.repeat(20) }, kmsBackend).configuration);
+const storage = {
+  versioning: { Status: 'Enabled' },
+  encryption: { ServerSideEncryptionConfiguration: { Rules: [{ ApplyServerSideEncryptionByDefault: { SSEAlgorithm: 'aws:kms', KMSMasterKeyID: kmsVariables.TF_STATE_KMS_KEY_ID } }] } },
+  acl: { Grants: [{ Grantee: { ID: 'synthetic-owner' }, Permission: 'FULL_CONTROL' }] },
+  policy: { Policy: JSON.stringify({ Statement: [{ Effect: 'Deny', Principal: '*', Action: 's3:*', Resource: ['arn:aws:s3:::example-state', 'arn:aws:s3:::example-state/*'], Condition: { Bool: { 'aws:SecureTransport': 'false' } } }] }) },
+};
+const settings = { bucket: 'example-state', mode: 'bucket-kms', keyId: kmsVariables.TF_STATE_KMS_KEY_ID };
+assert.equal(verifyStorageMetadata(settings, storage).encryption, 'aws:kms');
+for (const mutate of [
+  value => { value.versioning.Status = 'Suspended'; },
+  value => { value.encryption.ServerSideEncryptionConfiguration.Rules = []; },
+  value => { value.encryption.ServerSideEncryptionConfiguration.Rules[0].ApplyServerSideEncryptionByDefault.KMSMasterKeyID = 'different'; },
+  value => { value.acl.Grants.push({ Grantee: { URI: 'synthetic-public-group' } }); },
+  value => { value.policy.Policy = JSON.stringify({ Statement: [{ Effect: 'Allow', Principal: '*', Action: 's3:*', Resource: '*' }] }); },
+  value => { value.policy.Policy = JSON.stringify({ Statement: [] }); },
+]) {
+  const changed = structuredClone(storage);
+  mutate(changed);
+  assert.throws(() => verifyStorageMetadata(settings, changed));
+}
 console.log('PASS: three isolated backend keys, safe config, plan/run/input/version binding, checksum/expiry rejection, sanitized counts');
 console.log('Remote state, lock contention, Jenkins approval and cloud apply were not exercised.');

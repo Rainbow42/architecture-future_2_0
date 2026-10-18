@@ -15,10 +15,11 @@ try {
   mkdirSync(path.join(checkout, 'Task2Advanced'));
   mkdirSync(path.join(checkout, 'Task1Advanced/envs/dev'), { recursive: true });
   for (const file of ['lib.mjs', 'pipeline.mjs']) copyFileSync(path.join(source, file), path.join(checkout, 'Task2Advanced', file));
+  writeFileSync(path.join(checkout, 'Task2Advanced/backend-preflight.mjs'), `if (process.env.FAKE_PREFLIGHT_FAILURE === 'true') process.exit(1);\n`);
   writeFileSync(path.join(checkout, 'Task1Advanced/envs/dev/fixture.txt'), 'Synthetic configuration; not a cloud deployment.');
   const git = (...args) => execFileSync('git', ['-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', ...args], { cwd: checkout, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   git('init', '-q');
-  git('add', 'Task1Advanced/envs/dev/fixture.txt', 'Task2Advanced/lib.mjs', 'Task2Advanced/pipeline.mjs');
+  git('add', 'Task1Advanced/envs/dev/fixture.txt', 'Task2Advanced/lib.mjs', 'Task2Advanced/pipeline.mjs', 'Task2Advanced/backend-preflight.mjs');
   git('-c', 'user.name=Local Check', '-c', 'user.email=check@example.invalid', 'commit', '-qm', 'Add synthetic pipeline fixture');
   const mock = path.join(bin, 'terraform');
   writeFileSync(mock, `#!${process.execPath}
@@ -69,6 +70,11 @@ if (args[0] === 'apply' && process.env.FAKE_APPLY_FAILURE === 'true') {
   assert.equal(readFileSync(path.join(store, '124-1-dev/source/Task1Advanced/envs/dev/errored.tfstate'), 'utf8'), 'synthetic recovery state');
   assert(readFileSync(path.join(store, '124-1-dev/apply-failure.private.log'), 'utf8').includes('SYNTHETIC_PRIVATE_DIAGNOSTIC'));
   run('plan', { TF_RUN_ID: '125' }, 1);
+  const preflightStore = path.join(fixture, 'preflight-private-plans');
+  mkdirSync(preflightStore, { mode: 0o700 });
+  const callsBeforeFailedPreflight = readFileSync(variables.FAKE_CALL_LOG, 'utf8');
+  assert(run('plan', { TF_RUN_ID: '126', TF_PLAN_DIRECTORY: preflightStore, FAKE_PREFLIGHT_FAILURE: 'true' }, 1).includes('Backend security preflight failed'));
+  assert.equal(readFileSync(variables.FAKE_CALL_LOG, 'utf8'), callsBeforeFailedPreflight);
   console.log('PASS: disabled gate, exact saved plan, input mismatch rejection, no replan, repeated apply rejection, private failure recovery and blocked retry');
   console.log('Terraform was a local stub. No credentials, network services, real state or cloud resources were used.');
 } finally {

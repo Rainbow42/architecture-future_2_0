@@ -12,6 +12,18 @@ export function required(variables, name) {
   return value;
 }
 
+export function encryptionSettings(variables) {
+  const mode = variables.TF_STATE_ENCRYPTION ?? 'sse-s3';
+  assert(['sse-s3', 'bucket-kms'].includes(mode), 'Unknown state encryption mode');
+  if (mode === 'bucket-kms') {
+    const keyId = required(variables, 'TF_STATE_KMS_KEY_ID');
+    assert(/^[a-z0-9]{20}$/.test(keyId), 'Expected a Yandex KMS key ID');
+    assert.equal(new URL(required(variables, 'TF_STATE_ENDPOINT')).origin, 'https://storage.yandexcloud.net', 'Bucket KMS mode requires the Yandex Object Storage endpoint');
+    return { mode, keyId };
+  }
+  return { mode };
+}
+
 export function backendConfig(environment, variables) {
   assert(environments.includes(environment), 'Unknown environment');
   const endpoint = new URL(required(variables, 'TF_STATE_ENDPOINT'));
@@ -29,7 +41,7 @@ export function backendConfig(environment, variables) {
     endpoints: { s3: endpoint.origin },
     use_lockfile: true,
     use_path_style: true,
-    encrypt: true,
+    encrypt: encryptionSettings(variables).mode === 'sse-s3',
     skip_credentials_validation: true,
     skip_requesting_account_id: true,
     skip_metadata_api_check: true,
@@ -49,7 +61,7 @@ export function executionContext(environment, variables, backend) {
     runId: required(variables, 'TF_RUN_ID'),
     attempt: required(variables, 'TF_RUN_ATTEMPT'),
     terraform: terraformVersion,
-    configuration: digest(JSON.stringify({ backend, inputs })),
+    configuration: digest(JSON.stringify({ backend, inputs, encryption: encryptionSettings(variables) })),
   };
   assert(/^[a-f0-9]{40}$/.test(context.revision), 'Expected a full Git commit SHA');
   assert(/^\d+$/.test(context.runId) && /^\d+$/.test(context.attempt), 'Invalid run identity');

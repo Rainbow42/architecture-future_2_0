@@ -29,6 +29,7 @@ pipeline {
                 }
                 sh 'node Task2Advanced/checks.mjs'
                 sh 'node Task2Advanced/pipeline-checks.mjs'
+                sh 'npm ci --prefix Task2Advanced --ignore-scripts --no-audit --no-fund'
                 sh 'terraform fmt -check -recursive Task1Advanced'
             }
         }

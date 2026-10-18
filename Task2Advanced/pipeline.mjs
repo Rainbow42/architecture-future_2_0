@@ -51,6 +51,13 @@ try {
     assert.equal(readFileSync(backendFile, 'utf8'), backendHcl(backend), 'Stored backend differs');
   }
   const commandEnvironment = { ...variables, TF_DATA_DIR: path.join(runDirectory, 'data'), TF_WORKSPACE: 'default', TF_IN_AUTOMATION: 'true' };
+  try {
+    execFileSync(process.execPath, [path.join(repository, 'Task2Advanced/backend-preflight.mjs'), environment], {
+      env: commandEnvironment, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch {
+    throw new Error('Backend security preflight failed; Terraform was not started');
+  }
   function terraform(...args) {
     try {
       return execFileSync('terraform', [`-chdir=${configDirectory}`, ...args], {

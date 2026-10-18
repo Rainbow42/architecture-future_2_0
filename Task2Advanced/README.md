@@ -1,6 +1,6 @@
 # Удалённое состояние и CI/CD
 
-Подготовила конфигурацию backend и pipeline. Настоящие S3, блокировка, Jenkins input и облачный apply ещё не проверены. Бакет, CI, identities и secrets не создавались.
+Подготовила backend и pipeline. Созданы приватный бакет с versioning и KMS, отдельные state-аккаунты, локальный Jenkins и изолированный Linux-агент без монтирования домашнего каталога. Jenkinsfile прошёл настоящую компиляцию. Права state-аккаунтов ещё не настроены; S3-операции, блокировка, Jenkins input и облачный apply пока не проверены.
 
 ## Backend
 
@@ -18,9 +18,13 @@
 
 Выбран S3 API с поддержкой conditional writes. Для собственного MinIO необходимо проверить эти операции на выбранной версии: наличие S3 API не доказывает корректность блокировки. Руководство Yandex Cloud описывает другой вариант — Object Storage и YDB. Его не разворачивала и поддержку нативной S3-блокировки в Object Storage не подтверждаю.
 
-Обязательные настройки backend: HTTPS с проверяемым сертификатом, private bucket, versioning, запрет незашифрованного транспорта. `encrypt=true` требует серверного шифрования; для соответствующей конфигурации MinIO нужен подготовленный KMS. Бакет, identities и KMS создаются отдельно от VM-state: удаление ВМ не должно удалять историю состояния. Состояние и его версии считаются конфиденциальными.
+Обязательные настройки backend: HTTPS с проверяемым сертификатом, private bucket, versioning, запрет незашифрованного транспорта. Режим `TF_STATE_ENCRYPTION=sse-s3` по умолчанию задаёт `encrypt=true` и требует AES256. Для соответствующей конфигурации MinIO нужен подготовленный KMS. Бакет, identities и KMS создаются отдельно от VM-state: удаление ВМ не должно удалять историю состояния. Состояние и его версии считаются конфиденциальными.
 
-В [шаблоне policy](state-policy.example.json) заменяются `REPLACE_BUCKET` и `REPLACE_ENVIRONMENT`. Разрешены ListBucket только своего префикса, Get/Put точного state и Get/Put/Delete точного lock-файла. Delete state не требуется. Для plan-identity Put state можно убрать после проверки bootstrap-поведения backend; запись/удаление lock-файла нужны и для plan. При необходимости KMS-права ограничиваются конкретным ключом. Политика не была применена к реальной учётной записи.
+Для Yandex Object Storage предусмотрен `TF_STATE_ENCRYPTION=bucket-kms` с обязательным `TF_STATE_KMS_KEY_ID`. Terraform 1.12.2 при `encrypt=true` посылает AES256, а Object Storage поддерживает aws:kms; проверка `kms_key_id` этой версии Terraform не принимает собственный ID ключа YC. Поэтому в этом режиме клиент не задаёт SSE-заголовок (`encrypt=false` в HCL), а шифрование выполняется обязательной настройкой бакета. Это не отключение шифрования бакета. [Проверка backend](backend-preflight.mjs) до запуска Terraform должна прочитать настройки и подтвердить aws:kms с точным ID ключа, versioning, отсутствие групповых ACL и публичных Allow, запрет HTTP в policy. При любой ошибке Terraform не запускается; режим и ID ключа входят в хеш контекста сохранённого плана. Настоящую совместимость ещё предстоит проверить.
+
+Для preflight требуются GetBucketAcl, GetBucketVersioning, GetEncryptionConfiguration и GetBucketPolicy. В YC последнее требует отдельной роли `storage.configViewer` на бакет: она не даёт содержимое объектов, но раскрывает их имена и настройки. Такой доступ к метаданным всех сред отдельно запрошен и пока не настроен. Роль изменения настроек бакета для state-аккаунтов не нужна.
+
+В [шаблоне identity policy](state-policy.example.json) заменяются `REPLACE_BUCKET` и `REPLACE_ENVIRONMENT`. Это шаблон разрешений для привязки к identity в MinIO/AWS, а не готовая bucket policy YC: последней нужны явные `Principal.CanonicalUser`, отдельный запрет HTTP и настройки доступа к метаданным. Разрешены ListBucket только своего префикса, Get/Put точного state и Get/Put/Delete точного lock-файла. Delete state не требуется. Для plan-identity Put state можно убрать после проверки bootstrap-поведения backend; запись/удаление lock-файла нужны и для plan. При необходимости KMS-права ограничиваются конкретным ключом. Политика не была применена к реальной учётной записи.
 
 Пример локального init после отдельного разрешения и подготовки backend:
 
@@ -74,7 +78,7 @@ terraform -chdir=Task1Advanced/envs/dev init -input=false -backend-config=/absol
 | Username/password credentials | `tf-<среда>-state-plan`, `tf-<среда>-state-apply` | Access key / secret key своего state; подстановка в AWS-переменные |
 | Secret text credentials | `tf-<среда>-yc-plan`, `tf-<среда>-yc-apply` | YC_TOKEN: чтение для plan, ограниченное изменение для apply |
 
-Роли владельца организации не нужны. Точные cloud-роли и квоты согласуются для учебного каталога. Secrets, Jenkins jobs, агенты и облачные права автоматически не настраивались.
+Роли владельца организации не нужны. Точные cloud-роли и квоты ограничиваются учебным каталогом. Созданы три state-аккаунта без ролей на каталог; их статические ключи сохранены вне репозитория в приватных файлах. Права на префиксы и KMS ещё не выданы. В локальном Jenkins облачные credentials и deployment jobs не настроены. [Локальный CI](local-jenkins/README.md) не использует платную облачную ВМ.
 
 ## Восстановление
 
@@ -90,6 +94,7 @@ terraform -chdir=Task1Advanced/envs/dev init -input=false -backend-config=/absol
 node Task2Advanced/checks.mjs
 node Task2Advanced/pipeline-checks.mjs
 node --check Task2Advanced/pipeline.mjs
+npm ci --prefix Task2Advanced --ignore-scripts --no-audit --no-fund
 terraform fmt -check -recursive Task1Advanced
 ```
 
@@ -103,6 +108,8 @@ terraform fmt -check -recursive Task1Advanced
 4. После проверки стоимости разрешить настоящее применение Task1; проверить ВМ, диски и outputs, сохранить несекретные подтверждения.
 5. Проверить восстановление из версии в пробном контуре. Удаление учебных ресурсов согласовать отдельно; диски не считать автоматически сохранёнными при destroy.
 
-Проект к сдаче не готов. Ещё нужны разрешённая учебная среда, предел расходов, backend и приватный CI с ручным подтверждением; решения о расходах и выдаче доступа оставила пользовательнице.
+Проект к сдаче не готов. Учебная среда и расходы в пределах гранта согласованы. Остались настройка минимальных backend-прав, реальные S3/lock-проверки, deployment jobs с ручным подтверждением и настоящее применение Task1. Создание аккаунтов, бакета и успешная компиляция Jenkinsfile не заменяют эти проверки.
 
 Источники: [S3 backend и права](https://developer.hashicorp.com/terraform/language/backend/s3), [частичная конфигурация](https://developer.hashicorp.com/terraform/language/backend), [блокировка Yandex Cloud](https://yandex.cloud/ru/docs/terraform/tutorials/terraform-state-lock), [аутентификация YC](https://yandex.cloud/ru/docs/terraform/authentication), [Jenkins Pipeline](https://www.jenkins.io/doc/book/pipeline/syntax/), [ручной input](https://www.jenkins.io/doc/pipeline/steps/pipeline-input-step/), [Jenkins credentials](https://www.jenkins.io/doc/book/pipeline/jenkinsfile/).
+
+Совместимость шифрования: [PutObject YC](https://yandex.cloud/ru/docs/storage/s3/api-ref/object/upload), [шифрование по умолчанию](https://yandex.cloud/ru/docs/storage/operations/buckets/encrypt), [проверка kms_key_id в Terraform 1.12.2](https://github.com/hashicorp/terraform/blob/v1.12.2/internal/backend/remote-state/s3/validate.go), [чтение политики бакета YC](https://yandex.cloud/ru/docs/storage/operations/buckets/policy).
