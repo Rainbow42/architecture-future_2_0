@@ -27,7 +27,7 @@ pipeline {
                         if (separator < 1) {
                             error('Invalid fixed job setting')
                         }
-                        env[setting.substring(0, separator)] = setting.substring(separator + 1)
+                        env.setProperty(setting.substring(0, separator), setting.substring(separator + 1))
                     }
                     if (!(env.TF_ENVIRONMENT in ['dev', 'stage', 'prod']) || env.JOB_BASE_NAME != "future-deploy-${env.TF_ENVIRONMENT}") {
                         error('The job name must match its fixed environment')
