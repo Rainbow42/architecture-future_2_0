@@ -46,7 +46,7 @@ terraform -chdir=Task1Advanced/envs/dev apply dev.tfplan
 
 Для stage и prod замените каталог, имя tfvars, plan и файл backend на соответствующую среду. В backend у каждой среды должен быть отдельный ключ; менять среду только подстановкой tfvars в том же каталоге нельзя.
 
-Если нужен интерактивный запуск вместо сохранённого плана: `terraform -chdir=Task1Advanced/envs/dev apply -var-file=dev.tfvars`. Сначала внимательно проверьте показанный план. Для stage выполнен настоящий apply через сохранённый план Jenkins; ВМ, диски и outputs проверены. Dev требует восстановления после отказа диска, prod ещё не применён.
+Если нужен интерактивный запуск вместо сохранённого плана: `terraform -chdir=Task1Advanced/envs/dev apply -var-file=dev.tfvars`. Сначала внимательно проверьте показанный план. Для stage и prod выполнен настоящий apply через сохранённые планы Jenkins; ВМ, диски, закрытые SG и outputs сверены с API и зашифрованным state. Prod переиспользует VPC stage и ранее созданный data-диск. Dev требует восстановления после отказа диска.
 
 Backend S3 объявлен во всех средах: обычный `init` требует его настройки и не переходит молча на локальное хранение. Файлы backend содержат только endpoint/bucket/key и параметры протокола; ключи доступа передаются окружением. Генератор, CI/CD и порядок ручного разрешения подготовлены в [Task2Advanced](../Task2Advanced/README.md); настоящий S3 backend с KMS/versioning/lock и stage plan → input → apply проверены.
 

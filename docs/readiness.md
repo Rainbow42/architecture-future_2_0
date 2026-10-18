@@ -4,11 +4,13 @@
 
 | Задание | Материалы | Подтверждено | Осталось |
 |---|---|---|---|
-| Task1 | [Модуль и три среды](../Task1Advanced/README.md) | CPU/RAM, диски, subnet, SSH, tfvars, outputs; fmt, init без backend, validate, три mock-плана; stage apply SUCCESS, ВМ/диски/outputs сверены с API и state | Восстановление dev после отказа диска, plan/input/apply prod, проверка оставшихся сред; SSH-вход не проверен |
-| Task2 | [Backend и Jenkinsfile](../Task2Advanced/README.md) | Разные state/lock keys; IAM и policy; реальное KMS-шифрование, версии, conditional writes; 24 cross-environment и три анонимных запрета; настоящий Terraform lock; отзыв временного настройщика; stage plan → ручной input → apply SUCCESS | Завершить применение dev/prod; dev state сохранён после частичного отказа, повтор заблокирован |
+| Task1 | [Модуль и три среды](../Task1Advanced/README.md) | CPU/RAM, диски, subnet, SSH, tfvars, outputs; fmt, init без backend, validate, mock-планы; stage и prod apply SUCCESS, ВМ/диски/закрытые SG/outputs сверены с API и state | Восстановление dev после отказа диска и проверка результата; SSH-вход не проверен |
+| Task2 | [Backend и Jenkinsfile](../Task2Advanced/README.md) | Разные state/lock keys; IAM и policy; реальное KMS-шифрование, версии, conditional writes; 24 cross-environment и три анонимных запрета; настоящий Terraform lock; отзыв временного настройщика; stage plan → ручной input → apply SUCCESS; prod новый plan → делегированный input → apply SUCCESS | Завершить применение dev; его state сохранён после частичного отказа, повтор заблокирован |
 | Task3 | [C4 и миграция](../Task3Advanced/architecture.md), [риски](../Task3Advanced/risks.md) | Четыре пары PlantUML/SVG, 12 рисков с владельцами и мерами, горизонт три года | Документарная часть подготовлена. SLO и отказоустойчивость — проектные цели, не результаты испытаний |
 | Task4 | [Контексты](../Task4Advanced/contexts.md), [агрегаты](../Task4Advanced/aggregates.md), [события](../Task4Advanced/events.md), [обоснование](../Task4Advanced/justification.md) | 12 контекстов, 28 событий, две схемы, инварианты и компенсации; уточнён технический издатель продукта после валидации/outbox | Документарная часть подготовлена; живые интеграции не выдаются за реализованные |
 | Task5 | [Техрадар](../Task5Advanced/tech-radar.md), [TCO](../Task5Advanced/tco-analysis.md), [Data Mesh](../Task5Advanced/roadmap.md) | 30 решений, 21 статья затрат, три года, шесть сценариев чувствительности, роли и критерии этапов | Ставки и объёмы — учебные допущения; фактический бюджет и эффект не подтверждены |
+
+Текущее восстановление prod завершено: build 2 применил новый сохранённый план после сверки частичного state и отдельного разрешения общей VPC. Подтверждение input было делегированным. Обе созданные ВМ stage/prod работают, их диски и закрытые SG проверены. Для dev квота зоны d пока занята stage; ограниченный cleanup-план подготовлен, но без отдельного разрешения удаления не применяется.
 
 ## Сквозные ограничения
 
