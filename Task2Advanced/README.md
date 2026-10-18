@@ -1,6 +1,6 @@
 # Удалённое состояние и CI/CD
 
-Подготовила backend и pipeline. Созданы приватный бакет с versioning и шифрованием KMS, отдельный ключ, state-аккаунты, локальный Jenkins и изолированный Linux-агент без монтирования домашнего каталога. Реальные S3-проверки трёх сред и блокировка двумя процессами Terraform на синтетическом state прошли. Dev build 3 построил настоящий план и ждёт ручного input; apply пока не выполнялся, stage/prod ещё не запускались.
+Подготовила backend и pipeline. Созданы приватный бакет с versioning и шифрованием KMS, отдельный ключ, state-аккаунты, локальный Jenkins и изолированный Linux-агент без монтирования домашнего каталога. Реальные S3-проверки трёх сред и блокировка двумя процессами Terraform на синтетическом state прошли. Dev build 3 после ручного подтверждения завершился FAILURE на создании диска в ru-central1-a: три сетевых ресурса сохранены в state, ВМ и дисков нет, recovery-required не снят. По запросу пользовательницы готовится stage-план в ru-central1-d; prod не запускался. Полного успешного deployment пока нет.
 
 ## Backend
 
@@ -121,7 +121,7 @@ terraform fmt -check -recursive Task1Advanced
 4. После проверки стоимости разрешить настоящее применение Task1; проверить ВМ, диски и outputs, сохранить несекретные подтверждения.
 5. Проверить восстановление из версии в пробном контуре. Удаление учебных ресурсов согласовать отдельно; диски не считать автоматически сохранёнными при destroy.
 
-Проект к сдаче не готов. Учебная среда и расходы в пределах гранта согласованы. Шифрование, версии, изоляция объектов и реальный Terraform lock проверены. Deployment jobs, ключи CI и SSH подготовлены. Остались настоящий запуск pipeline с ручным подтверждением и применение Task1. Проверка backend и успешная компиляция Jenkinsfile не заменяют эти этапы.
+Проект к сдаче не готов. Учебная среда и расходы в пределах гранта согласованы. Шифрование, версии, изоляция объектов и реальный Terraform lock проверены. Dev apply после ручного input завершился частичным отказом на создании диска; state сверён, повторы заблокированы. Stage build 1 построил план в ru-central1-d и ждёт input; факт создания в этой зоне ещё не проверен. Остались успешное применение Task1 во всех средах и проверка результатов. Проверка backend и компиляция Jenkinsfile не заменяют эти этапы.
 
 Источники: [S3 backend и права](https://developer.hashicorp.com/terraform/language/backend/s3), [частичная конфигурация](https://developer.hashicorp.com/terraform/language/backend), [блокировка Yandex Cloud](https://yandex.cloud/ru/docs/terraform/tutorials/terraform-state-lock), [аутентификация YC](https://yandex.cloud/ru/docs/terraform/authentication), [Jenkins Pipeline](https://www.jenkins.io/doc/book/pipeline/syntax/), [ручной input](https://www.jenkins.io/doc/pipeline/steps/pipeline-input-step/), [Jenkins credentials](https://www.jenkins.io/doc/book/pipeline/jenkinsfile/).
 
