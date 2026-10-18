@@ -36,6 +36,9 @@ assert.throws(() => verifyPlan(metadata, context, Buffer.from('changed'), now));
 assert.throws(() => verifyPlan(metadata, context, plan, now + planLifetimeMs + 1));
 assert.throws(() => verifyPlan(metadata, context, plan, now - 1));
 assert.notEqual(executionContext('dev', { ...variables, TF_VAR_folder_id: 'another-folder' }, configurations[0]).configuration, context.configuration);
+const prodContext = executionContext('prod', variables, configurations[2]);
+assert.notEqual(executionContext('prod', { ...variables, TF_VAR_existing_network_id: 'n'.repeat(20) }, configurations[2]).configuration, prodContext.configuration);
+assert.throws(() => executionContext('dev', { ...variables, TF_VAR_existing_network_id: 'n'.repeat(20) }, configurations[0]));
 assert.deepEqual(summarizePlan({ resource_changes: [{ change: { actions: ['create'] } }, { change: { actions: ['delete', 'create'] } }], output_changes: { x: { actions: ['update'] } } }), { resources: { create: 1, 'delete/create': 1 }, outputs: 1 });
 
 const kmsVariables = { ...variables, TF_STATE_ENDPOINT: 'https://storage.yandexcloud.net', TF_STATE_ENCRYPTION: 'bucket-kms', TF_STATE_KMS_KEY_ID: 'a'.repeat(20) };

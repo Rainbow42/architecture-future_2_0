@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { planIntent } from './release-scope.mjs';
 
 export const terraformVersion = '1.12.2';
 export const environments = ['dev', 'stage', 'prod'];
@@ -55,13 +56,15 @@ export function backendHcl(configuration) {
 
 export function executionContext(environment, variables, backend) {
   const inputs = Object.fromEntries(['TF_VAR_folder_id', 'TF_VAR_boot_image_id', 'TF_VAR_ssh_public_key'].map(name => [name, required(variables, name)]));
+  inputs.TF_VAR_existing_network_id = variables.TF_VAR_existing_network_id ?? null;
+  assert(inputs.TF_VAR_existing_network_id === null || (environment === 'prod' && /^[a-z0-9]{20}$/.test(inputs.TF_VAR_existing_network_id)), 'An existing network is allowed only for prod with an exact ID');
   const context = {
     environment,
     revision: required(variables, 'TF_SOURCE_REVISION'),
     runId: required(variables, 'TF_RUN_ID'),
     attempt: required(variables, 'TF_RUN_ATTEMPT'),
     terraform: terraformVersion,
-    configuration: digest(JSON.stringify({ backend, inputs, encryption: encryptionSettings(variables) })),
+    configuration: digest(JSON.stringify({ backend, inputs, encryption: encryptionSettings(variables), intent: planIntent(environment, variables) })),
   };
   assert(/^[a-f0-9]{40}$/.test(context.revision), 'Expected a full Git commit SHA');
   assert(/^\d+$/.test(context.runId) && /^\d+$/.test(context.attempt), 'Invalid run identity');

@@ -6,6 +6,16 @@ variable "folder_id" {
   type = string
 }
 
+variable "existing_network_id" {
+  type    = string
+  default = null
+
+  validation {
+    condition     = var.existing_network_id == null ? true : can(regex("^[a-z0-9]{20}$", var.existing_network_id))
+    error_message = "Use an exact existing network ID or null."
+  }
+}
+
 variable "zone" {
   type = string
 }

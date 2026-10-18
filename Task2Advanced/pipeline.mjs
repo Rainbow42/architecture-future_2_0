@@ -4,6 +4,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, unlinkSync, writeFileSy
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { backendConfig, backendHcl, digest, executionContext, required, summarizePlan, terraformVersion, verifyPlan } from './lib.mjs';
+import { planIntent, releaseAddresses, verifyReleasePlan } from './release-scope.mjs';
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const [operation, environment] = process.argv.slice(2);
@@ -16,8 +17,10 @@ try {
   assert.equal(variables.TF_WORKSPACE ?? 'default', 'default', 'Only the default workspace is supported');
   for (const name of Object.keys(variables)) {
     assert(!name.startsWith('TF_CLI_ARGS') && !name.startsWith('TF_LOG'), 'Remove ambient Terraform arguments/log settings');
+    assert(!name.startsWith('TF_VAR_') || ['TF_VAR_folder_id', 'TF_VAR_boot_image_id', 'TF_VAR_ssh_public_key', 'TF_VAR_existing_network_id'].includes(name), 'Remove unreviewed ambient Terraform inputs');
   }
   const backend = backendConfig(environment, variables);
+  const intent = planIntent(environment, variables);
   const context = executionContext(environment, variables, backend);
   for (const name of ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'YC_TOKEN']) required(variables, name);
   const store = required(variables, 'TF_PLAN_DIRECTORY');
@@ -32,7 +35,7 @@ try {
   assert(!existsSync(recoveryGuard), 'A previous apply needs state reconciliation; inspect the private runner before starting a new run');
   assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repository, encoding: 'utf8' }).trim(), context.revision, 'Checkout must match the run commit');
   assert.equal(execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: repository, encoding: 'utf8' }).trim(), '', 'Tracked files must be clean');
-  const runDirectory = path.join(store, `${context.runId}-${context.attempt}-${environment}`);
+  const runDirectory = path.join(store, `${intent.kind === 'deploy' ? '' : 'release-'}${context.runId}-${context.attempt}-${environment}`);
   const snapshot = path.join(runDirectory, 'source');
   const configDirectory = path.join(snapshot, 'Task1Advanced/envs', environment);
   const savedPlan = path.join(runDirectory, 'approved.tfplan');
@@ -72,16 +75,20 @@ try {
   terraform('init', '-input=false', '-reconfigure', '-lockfile=readonly', `-backend-config=${backendFile}`);
   terraform('validate', '-no-color');
   if (operation === 'plan') {
-    terraform('plan', '-input=false', '-no-color', '-lock-timeout=60s', `-var-file=${environment}.tfvars`, `-out=${savedPlan}`);
+    const scope = intent.kind === 'deploy' ? [] : ['-destroy', ...releaseAddresses.map(address => `-target=${address}`)];
+    terraform('plan', '-input=false', '-no-color', '-lock-timeout=60s', ...scope, `-var-file=${environment}.tfvars`, `-out=${savedPlan}`);
     writeFileSync(path.join(runDirectory, 'plan.private.txt'), terraform('show', '-no-color', savedPlan), { mode: 0o600, flag: 'wx' });
-    const summary = summarizePlan(JSON.parse(terraform('show', '-json', savedPlan)));
+    const parsedPlan = JSON.parse(terraform('show', '-json', savedPlan));
+    if (intent.kind !== 'deploy') verifyReleasePlan(parsedPlan, intent, required(variables, 'TF_VAR_folder_id'));
+    const summary = summarizePlan(parsedPlan);
     const metadata = { context, createdAt: Date.now(), sha256: digest(readFileSync(savedPlan)) };
     writeFileSync(manifest, JSON.stringify(metadata, null, 2), { mode: 0o600, flag: 'wx' });
-    const message = `Plan: ${environment}\nCommit: ${context.revision}\nSHA256: ${metadata.sha256}\nCounts: ${JSON.stringify(summary)}\nPrivate plan on the dedicated runner: ${runDirectory}/plan.private.txt\nReview the complete plan before approving apply. Counts alone are not a review.\n`;
+    const message = `Plan: ${environment}\nIntent: ${intent.kind}\nCommit: ${context.revision}\nSHA256: ${metadata.sha256}\nCounts: ${JSON.stringify(summary)}\nPrivate plan on the dedicated runner: ${runDirectory}/plan.private.txt\nReview the complete plan before approving apply. Counts alone are not a review.\n`;
     process.stdout.write(message);
   } else {
     const metadata = JSON.parse(readFileSync(manifest, 'utf8'));
     verifyPlan(metadata, context, readFileSync(savedPlan));
+    if (intent.kind !== 'deploy') verifyReleasePlan(JSON.parse(terraform('show', '-json', savedPlan)), intent, required(variables, 'TF_VAR_folder_id'));
     writeFileSync(path.join(runDirectory, 'apply-started.json'), JSON.stringify({ sha256: metadata.sha256 }), { mode: 0o600, flag: 'wx' });
     writeFileSync(recoveryGuard, JSON.stringify({ runDirectory, sha256: metadata.sha256 }), { mode: 0o600, flag: 'wx' });
     terraform('apply', '-input=false', '-no-color', '-lock-timeout=60s', savedPlan);

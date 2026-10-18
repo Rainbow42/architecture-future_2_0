@@ -1,14 +1,31 @@
 resource "yandex_vpc_network" "environment" {
+  count     = var.existing_network_id == null ? 1 : 0
   name      = "${var.name}-network"
   folder_id = var.folder_id
   labels    = var.labels
+}
+
+data "yandex_vpc_network" "existing" {
+  count      = var.existing_network_id == null ? 0 : 1
+  network_id = var.existing_network_id
+
+  lifecycle {
+    postcondition {
+      condition     = self.folder_id == var.folder_id
+      error_message = "The reused network must belong to the training folder."
+    }
+  }
+}
+
+locals {
+  network_id = var.existing_network_id == null ? yandex_vpc_network.environment[0].id : data.yandex_vpc_network.existing[0].id
 }
 
 resource "yandex_vpc_subnet" "environment" {
   name           = "${var.name}-subnet"
   folder_id      = var.folder_id
   zone           = var.zone
-  network_id     = yandex_vpc_network.environment.id
+  network_id     = local.network_id
   v4_cidr_blocks = [var.subnet_cidr]
   labels         = var.labels
 }
@@ -16,7 +33,7 @@ resource "yandex_vpc_subnet" "environment" {
 resource "yandex_vpc_security_group" "vm" {
   name       = "${var.name}-sg"
   folder_id  = var.folder_id
-  network_id = yandex_vpc_network.environment.id
+  network_id = local.network_id
   labels     = var.labels
 
   dynamic "ingress" {

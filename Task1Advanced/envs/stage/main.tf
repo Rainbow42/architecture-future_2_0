@@ -2,6 +2,10 @@ resource "yandex_vpc_network" "environment" {
   name      = "${var.name}-network"
   folder_id = var.folder_id
   labels    = var.labels
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "yandex_vpc_subnet" "environment" {

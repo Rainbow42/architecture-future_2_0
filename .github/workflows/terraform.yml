@@ -27,6 +27,7 @@ jobs:
       - run: node Task2Advanced/pipeline-checks.mjs
       - run: node Task2Advanced/iam-checks.mjs
       - run: node Task2Advanced/job-settings-checks.mjs
+      - run: node Task2Advanced/release-checks.mjs
       - run: node scripts/calculate-tco.mjs --check
       - run: terraform fmt -check -recursive Task1Advanced
       - name: Validate and plan with a mock provider
@@ -39,5 +40,8 @@ jobs:
             terraform -chdir="$directory" validate
             mkdir -p "$directory/.terraform/checks"
             cp Task1Advanced/checks/environment.tftest.hcl "$directory/.terraform/checks/"
+            if [ "$environment" = prod ]; then
+              cp Task1Advanced/checks/prod-network.tftest.hcl "$directory/.terraform/checks/"
+            fi
             terraform -chdir="$directory" test -test-directory=.terraform/checks -var-file="$environment.tfvars"
           done
