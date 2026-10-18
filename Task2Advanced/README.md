@@ -43,7 +43,7 @@ node Task2Advanced/backend.mjs dev > /absolute/private/path/dev.local.hcl
 terraform -chdir=Task1Advanced/envs/dev init -input=false -backend-config=/absolute/private/path/dev.local.hcl
 ```
 
-Адрес — неработающий пример. `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` передаются окружением, не аргументами, tfvars или backend-файлом. Отдельный `YC_TOKEN` аутентифицирует провайдер, а не S3. IAM-токен должен оставаться действительным после ожидания ручного подтверждения.
+Адрес — неработающий пример. `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` передаются окружением, не аргументами, tfvars или backend-файлом. Отдельный `YC_TOKEN` аутентифицирует провайдер, а не S3. В CI [обёртка](with-iam.mjs) получает свежий IAM-токен непосредственно перед plan и повторно перед apply из соответствующего Secret file. [Обмен ключа](iam-token.mjs) использует PS256, проверяет ожидаемую identity, права файла и срок токена; JWT и токен остаются в памяти. Ожидание input не требует заранее сохранённого долгоживущего IAM-токена.
 
 ## Pipeline
 
@@ -56,9 +56,9 @@ terraform -chdir=Task1Advanced/envs/dev init -input=false -backend-config=/absol
 3. Approve saved plan: обязательный `input`, список разрешённых пользователей/групп `TF_APPROVERS`, ожидание до 12 часов. Отказ завершает pipeline до выдачи apply-credentials.
 4. Apply: отдельная apply-identity и именно сохранённый plan на том же агенте, без повторного планирования.
 
-На среду нужен один Jenkins job с фиксированным `TF_ENVIRONMENT`. SCM URL фиксируется на этом репозитории, ветка — проверенная main/codex/sprint-11. Automatic PR discovery и произвольные форки не подключаются. Полный SHA задаётся в `APPROVED_COMMIT` перед запуском и проверяется до выдачи credentials. Изменять SCM/Jenkinsfile/job могут только доверенные администраторы. До `TF_DEPLOYMENT_ENABLED=true` выполнение прекращается.
+Созданы jobs future-deploy-dev, future-deploy-stage, future-deploy-prod. SCM URL фиксируется на этом репозитории, ветка — проверенная main/codex/sprint-11. Automatic PR discovery и произвольные форки не подключаются. Полный SHA задаётся в `APPROVED_COMMIT` перед запуском и проверяется до выдачи credentials. Несекретные настройки читаются из приватного JSON на агенте: путь TF_JOB_CONFIG_FILE задан администратором, раздел выбирается по полному JOB_NAME, имя job должно совпасть с фиксированной средой. Разрешён только явный список параметров; произвольное окружение из JSON не принимается. Изменять SCM/Jenkinsfile/job и настройки могут только доверенные администраторы. До TF_DEPLOYMENT_ENABLED=true выполнение прекращается.
 
-Перед подтверждением человек открывает `plan.private.txt` на приватном агенте, проверяет ресурсы, диски, сеть, каталог, удаления, стоимость и SHA256; затем нажимает Apply reviewed plan в Jenkins. Сводка количества действий не заменяет полный план. Администратор Jenkins может подтвердить input независимо от списка: это доверенная роль. Для prod нужен отдельный подтверждающий человек. Restart from Stage отключён, чтобы не перескакивать через согласование. План старше 24 часов отклоняется.
+Перед подтверждением человек открывает `plan.private.txt` на приватном агенте, проверяет ресурсы, диски, сеть, каталог, удаления, стоимость и SHA256; затем нажимает Apply reviewed plan в Jenkins. Сводка количества действий не заменяет полный план. По явному решению владелицы все три учебные среды, включая prod, вручную подтверждает она сама; отдельный второй человек для этой учебной проверки не требуется. Агент не подтверждает input административным API. Администратор Jenkins технически может подтвердить input независимо от списка: это доверенная роль. Restart from Stage отключён, чтобы не перескакивать через согласование. План старше 24 часов отклоняется.
 
 Бинарный plan, state, полный вывод Terraform и аварийный state не загружаются в GitHub artifacts, в том числе зашифрованными. В консоль CI выводятся только среда, commit, хеш и количества действий. Полные данные остаются на приватном Jenkins-агенте. Такой gate не зависит от платных возможностей GitHub; вычислительные ресурсы CI всё равно должны укладываться в отдельно согласованный бюджет.
 
@@ -73,7 +73,7 @@ terraform -chdir=Task1Advanced/envs/dev init -input=false -backend-config=/absol
 
 ## Настройки вне репозитория
 
-Несекретные параметры фиксируются в конфигурации job. Secrets хранятся в Jenkins Credentials, не в build parameters. Для сред identities разделяются.
+Несекретные параметры фиксируются в приватном JSON конфигурации jobs на агенте. Secrets хранятся в Jenkins Credentials, не в build parameters. S3-identities разделены по средам; plan/apply одной среды используют одну её S3-identity, поскольку Terraform должен создавать и удалять lock при обеих операциях. Для Compute plan и apply используются разные аккаунты.
 
 | Тип | Имя | Назначение |
 |---|---|---|
@@ -81,10 +81,12 @@ terraform -chdir=Task1Advanced/envs/dev init -input=false -backend-config=/absol
 | Job variables | `TF_STATE_ENDPOINT`, `TF_STATE_BUCKET`, `TF_STATE_REGION` | Подготовленный приватный backend |
 | Job variable | `TF_PLAN_DIRECTORY` | Приватное постоянное место для планов |
 | Job variables | `TF_VAR_folder_id`, `TF_VAR_boot_image_id`, `TF_VAR_ssh_public_key` | Учебный каталог, образ, открытый SSH-ключ |
+| Agent variable | `TF_JOB_CONFIG_FILE` | Абсолютный путь к приватному JSON с фиксированными настройками jobs |
+| Job variables | `TF_YC_PLAN_SERVICE_ACCOUNT_ID`, `TF_YC_APPLY_SERVICE_ACCOUNT_ID` | Ожидаемые разные Compute-identities для проверки привязанного ключа |
 | Username/password credentials | `tf-<среда>-state-plan`, `tf-<среда>-state-apply` | Access key / secret key своего state; подстановка в AWS-переменные |
-| Secret text credentials | `tf-<среда>-yc-plan`, `tf-<среда>-yc-apply` | YC_TOKEN: чтение для plan, ограниченное изменение для apply |
+| Secret file credentials | `tf-<среда>-yc-plan`, `tf-<среда>-yc-apply` | Авторизованные ключи: свежий IAM-токен перед каждой стадией, не заранее сохранённый YC_TOKEN |
 
-Роли владельца организации не нужны. Точные cloud-роли и квоты ограничиваются учебным каталогом. Созданы три state-аккаунта без ролей на каталог; их статические ключи сохранены вне репозитория в приватных файлах. На один бакет назначены storage.configViewer и storage.editor; policy разрешает только свои state/lock/verification и чтение метаданных. На один KMS-ключ назначена encrypt/decrypt. Политика не разрешает изменение настроек бакета, ACL, удаление state или его версий; широкая IAM-роль не должна использоваться без этой policy. В локальном Jenkins облачные credentials и deployment jobs не настроены. [Локальный CI](local-jenkins/README.md) не использует платную облачную ВМ.
+Роли владельца организации не нужны. Точные cloud-роли и квоты ограничиваются учебным каталогом. Созданы три state-аккаунта без ролей на каталог; их статические ключи сохранены вне репозитория в приватных файлах. На один бакет назначены storage.configViewer и storage.editor; policy разрешает только свои state/lock/verification и чтение метаданных. На один KMS-ключ назначена encrypt/decrypt. Политика не разрешает изменение настроек бакета, ACL, удаление state или его версий; широкая IAM-роль не должна использоваться без этой policy. По отдельному разрешению создан read-only Compute/VPC-аккаунт plan с RSA4096-ключом; настоящий JWT-обмен и GET Compute/VPC прошли. Ключи установлены в приватный Jenkins Credentials, три deployment jobs созданы, но ещё не запускались. Отдельная SSH-пара подготовлена: закрытый ключ остаётся локально, в настройки jobs передан только открытый. [Локальный CI](local-jenkins/README.md) не использует платную облачную ВМ.
 
 ## Восстановление
 
@@ -99,6 +101,7 @@ terraform -chdir=Task1Advanced/envs/dev init -input=false -backend-config=/absol
 ```sh
 node Task2Advanced/checks.mjs
 node Task2Advanced/pipeline-checks.mjs
+node Task2Advanced/iam-checks.mjs
 node --check Task2Advanced/pipeline.mjs
 npm ci --prefix Task2Advanced --ignore-scripts --no-audit --no-fund
 terraform fmt -check -recursive Task1Advanced
@@ -118,7 +121,7 @@ terraform fmt -check -recursive Task1Advanced
 4. После проверки стоимости разрешить настоящее применение Task1; проверить ВМ, диски и outputs, сохранить несекретные подтверждения.
 5. Проверить восстановление из версии в пробном контуре. Удаление учебных ресурсов согласовать отдельно; диски не считать автоматически сохранёнными при destroy.
 
-Проект к сдаче не готов. Учебная среда и расходы в пределах гранта согласованы. Шифрование, версии, изоляция объектов и реальный Terraform lock проверены. Остались deployment jobs с ручным подтверждением и настоящее применение Task1. Проверка backend и успешная компиляция Jenkinsfile не заменяют эти этапы.
+Проект к сдаче не готов. Учебная среда и расходы в пределах гранта согласованы. Шифрование, версии, изоляция объектов и реальный Terraform lock проверены. Deployment jobs, ключи CI и SSH подготовлены. Остались настоящий запуск pipeline с ручным подтверждением и применение Task1. Проверка backend и успешная компиляция Jenkinsfile не заменяют эти этапы.
 
 Источники: [S3 backend и права](https://developer.hashicorp.com/terraform/language/backend/s3), [частичная конфигурация](https://developer.hashicorp.com/terraform/language/backend), [блокировка Yandex Cloud](https://yandex.cloud/ru/docs/terraform/tutorials/terraform-state-lock), [аутентификация YC](https://yandex.cloud/ru/docs/terraform/authentication), [Jenkins Pipeline](https://www.jenkins.io/doc/book/pipeline/syntax/), [ручной input](https://www.jenkins.io/doc/pipeline/steps/pipeline-input-step/), [Jenkins credentials](https://www.jenkins.io/doc/book/pipeline/jenkinsfile/).
 

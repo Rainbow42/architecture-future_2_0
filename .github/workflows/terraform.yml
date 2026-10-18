@@ -25,6 +25,7 @@ jobs:
           terraform_wrapper: false
       - run: node Task2Advanced/checks.mjs
       - run: node Task2Advanced/pipeline-checks.mjs
+      - run: node Task2Advanced/iam-checks.mjs
       - run: node scripts/calculate-tco.mjs --check
       - run: terraform fmt -check -recursive Task1Advanced
       - name: Validate and plan with a mock provider
