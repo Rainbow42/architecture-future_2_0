@@ -1,5 +1,5 @@
 name              = "future-dev"
-zone              = "ru-central1-a"
+zone              = "ru-central1-d"
 platform_id       = "standard-v3"
 cores             = 2
 memory_gb         = 2
