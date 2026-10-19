@@ -1,0 +1,79 @@
+pipeline {
+    agent { label 'future-terraform' }
+    options {
+        skipDefaultCheckout()
+        disableConcurrentBuilds()
+        disableRestartFromStage()
+        timeout(time: 24, unit: 'HOURS')
+    }
+    parameters {
+        string(name: 'APPROVED_COMMIT', defaultValue: '', description: 'Full SHA of the reviewed source commit')
+    }
+    stages {
+        stage('Prepare') {
+            steps {
+                checkout scm
+                script {
+                    env.TF_SOURCE_REVISION = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+                    if (!(params.APPROVED_COMMIT ==~ /[a-f0-9]{40}/) || params.APPROVED_COMMIT != env.TF_SOURCE_REVISION) {
+                        error('Checkout differs from the reviewed commit')
+                    }
+                    if (!env.TF_JOB_CONFIG_FILE?.startsWith('/')) {
+                        error('Configure a private absolute job-settings file on the dedicated agent')
+                    }
+                    def settings = sh(script: 'node Task2Advanced/job-settings.mjs "$TF_JOB_CONFIG_FILE" "$JOB_NAME"', returnStdout: true).trim()
+                    settings.split('\n').each { setting ->
+                        def separator = setting.indexOf('=')
+                        if (separator < 1) {
+                            error('Invalid fixed job setting')
+                        }
+                        env.setProperty(setting.substring(0, separator), setting.substring(separator + 1))
+                    }
+                    if (!(env.TF_ENVIRONMENT in ['dev', 'stage', 'prod']) || env.JOB_BASE_NAME != "future-deploy-${env.TF_ENVIRONMENT}") {
+                        error('The job name must match its fixed environment')
+                    }
+                    if (env.TF_DEPLOYMENT_ENABLED != 'true' || !env.TF_APPROVERS?.trim()) {
+                        error('Deployment is disabled or approvers are not configured')
+                    }
+                    env.TF_RUN_ID = env.BUILD_NUMBER
+                    env.TF_RUN_ATTEMPT = '1'
+                }
+                sh 'node Task2Advanced/checks.mjs'
+                sh 'node Task2Advanced/pipeline-checks.mjs'
+                sh 'node Task2Advanced/iam-checks.mjs'
+                sh 'node Task2Advanced/job-settings-checks.mjs'
+                sh 'npm ci --prefix Task2Advanced --ignore-scripts --no-audit --no-fund'
+                sh 'terraform fmt -check -recursive Task1Advanced'
+            }
+        }
+        stage('Init and plan') {
+            options { timeout(time: 30, unit: 'MINUTES') }
+            steps {
+                withCredentials([
+                    usernamePassword(credentialsId: "tf-${env.TF_ENVIRONMENT}-state-plan", usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY'),
+                    file(credentialsId: "tf-${env.TF_ENVIRONMENT}-yc-plan", variable: 'YC_AUTHORIZED_KEY_FILE')
+                ]) {
+                    sh 'node Task2Advanced/with-iam.mjs plan "$TF_ENVIRONMENT"'
+                }
+            }
+        }
+        stage('Approve saved plan') {
+            options { timeout(time: 12, unit: 'HOURS') }
+            steps {
+                input message: "Review the full private plan, SHA256, costs and commit ${env.TF_SOURCE_REVISION} for ${env.TF_ENVIRONMENT}. Apply this saved plan?",
+                    ok: 'Apply reviewed plan', submitter: env.TF_APPROVERS
+            }
+        }
+        stage('Apply') {
+            options { timeout(time: 30, unit: 'MINUTES') }
+            steps {
+                withCredentials([
+                    usernamePassword(credentialsId: "tf-${env.TF_ENVIRONMENT}-state-apply", usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY'),
+                    file(credentialsId: "tf-${env.TF_ENVIRONMENT}-yc-apply", variable: 'YC_AUTHORIZED_KEY_FILE')
+                ]) {
+                    sh 'node Task2Advanced/with-iam.mjs apply "$TF_ENVIRONMENT"'
+                }
+            }
+        }
+    }
+}

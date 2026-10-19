@@ -1,0 +1,36 @@
+{
+  "currency": "RUB",
+  "years": 3,
+  "basis": "Учебные допущения в постоянных условных ценах, не тарифы поставщика и не фактическая бухгалтерия",
+  "legacy_retention": [1, 0.65, 0.2],
+  "categories": {
+    "infrastructure": "Инфраструктура",
+    "licenses_support": "Лицензии и внешняя поддержка",
+    "operations": "Эксплуатация и владение продуктами",
+    "analyst_time": "Рутинная работа аналитиков",
+    "transformation": "Переход и обучение"
+  },
+  "lines": [
+    {"id":"legacy_cpu","category":"infrastructure","label":"Мощность легаси","unit":"vCPU","as_is":[192,240,288],"to_be":[192,240,288],"rate_rub":2,"periods":8760,"rate_unit":"vCPU-час","legacy_retention":true},
+    {"id":"legacy_ram","category":"infrastructure","label":"Память легаси","unit":"ГиБ","as_is":[768,960,1152],"to_be":[768,960,1152],"rate_rub":0.5,"periods":8760,"rate_unit":"ГиБ-час","legacy_retention":true},
+    {"id":"legacy_disks","category":"infrastructure","label":"Диски легаси, физический объём","unit":"ТиБ","as_is":[400,520,676],"to_be":[400,520,676],"rate_rub":1000,"periods":12,"rate_unit":"ТиБ-месяц","legacy_retention":true},
+    {"id":"legacy_backups","category":"infrastructure","label":"Копии легаси","unit":"ТиБ","as_is":[400,520,676],"to_be":[400,520,676],"rate_rub":500,"periods":12,"rate_unit":"ТиБ-месяц","legacy_retention":true},
+    {"id":"legacy_licenses","category":"licenses_support","label":"Лицензии и сопровождение легаси","unit":"пакет","as_is":[1,1,1],"to_be":[1,1,0.5],"rate_rub":6000000,"periods":1,"rate_unit":"пакет-год"},
+    {"id":"bi_licenses","category":"licenses_support","label":"Сохранённые лицензии BI","unit":"пакет","as_is":[1,1,1],"to_be":[1,1,1],"rate_rub":1200000,"periods":1,"rate_unit":"пакет-год"},
+    {"id":"platform_support","category":"licenses_support","label":"Внешняя поддержка новой платформы","unit":"пакет","as_is":[0,0,0],"to_be":[1,1.5,2],"rate_rub":1000000,"periods":1,"rate_unit":"пакет-год"},
+    {"id":"platform_cpu","category":"infrastructure","label":"CPU платформы и сборщиков","unit":"vCPU","as_is":[0,0,0],"to_be":[128,192,256],"rate_rub":2.2,"periods":8760,"rate_unit":"vCPU-час","cloud":true},
+    {"id":"platform_ram","category":"infrastructure","label":"RAM платформы и сборщиков","unit":"ГиБ","as_is":[0,0,0],"to_be":[512,768,1024],"rate_rub":0.6,"periods":8760,"rate_unit":"ГиБ-час","cloud":true},
+    {"id":"product_objects","category":"infrastructure","label":"Разрешённые продукты и версии","unit":"ТиБ","as_is":[0,0,0],"to_be":[40,80,120],"rate_rub":1500,"periods":12,"rate_unit":"ТиБ-месяц","cloud":true,"storage":true},
+    {"id":"platform_hot_disks","category":"infrastructure","label":"Диски витрин, брокера и каталога с репликами","unit":"ТиБ","as_is":[0,0,0],"to_be":[12,24,36],"rate_rub":6000,"periods":12,"rate_unit":"ТиБ-месяц","cloud":true,"storage":true},
+    {"id":"platform_backups","category":"infrastructure","label":"Изолированные резервные копии продуктов и метаданных","unit":"ТиБ","as_is":[0,0,0],"to_be":[40,80,120],"rate_rub":800,"periods":12,"rate_unit":"ТиБ-месяц","cloud":true,"storage":true},
+    {"id":"platform_logs","category":"infrastructure","label":"Аудит и технические журналы","unit":"ТиБ","as_is":[0,0,0],"to_be":[5,8,12],"rate_rub":1500,"periods":12,"rate_unit":"ТиБ-месяц","cloud":true,"storage":true},
+    {"id":"object_operations","category":"infrastructure","label":"Операции объектного хранилища","unit":"млн операций в год","as_is":[0,0,0],"to_be":[12,24,48],"rate_rub":500,"periods":1,"rate_unit":"млн операций","cloud":true},
+    {"id":"egress","category":"infrastructure","label":"Исходящий и межрегиональный трафик","unit":"ГиБ в год","as_is":[0,0,0],"to_be":[12288,24576,49152],"rate_rub":2,"periods":1,"rate_unit":"ГиБ","cloud":true},
+    {"id":"connectivity","category":"infrastructure","label":"Каналы, VPN и балансировщики","unit":"пакет","as_is":[0.6,0.8,1],"to_be":[1.2,1.5,2],"rate_rub":1000000,"periods":1,"rate_unit":"пакет-год"},
+    {"id":"operations_staff","category":"operations","label":"SRE и инженеры сопровождения обоих контуров","unit":"FTE-год","as_is":[4,4.5,5],"to_be":[5,6,6],"rate_rub":3000000,"periods":1,"rate_unit":"FTE-год"},
+    {"id":"product_owners","category":"operations","label":"Владение и качество продуктов данных","unit":"FTE-год","as_is":[1,1,1],"to_be":[2,3,3],"rate_rub":3600000,"periods":1,"rate_unit":"FTE-год"},
+    {"id":"analyst_routine","category":"analyst_time","label":"Рутинная подготовка, поиск и сверка аналитиков","unit":"час в год","as_is":[18000,21600,25920],"to_be":[15000,10000,8000],"rate_rub":1600,"periods":1,"rate_unit":"час"},
+    {"id":"migration_team","category":"transformation","label":"Разработка портала, адаптеров, перенос и сверка","unit":"FTE-год","as_is":[0,0,0],"to_be":[8,5,2],"rate_rub":4200000,"periods":1,"rate_unit":"FTE-год"},
+    {"id":"training_cutover","category":"transformation","label":"Обучение, независимые проверки и переключения","unit":"пакет","as_is":[0,0,0],"to_be":[1.8,1.2,0.6],"rate_rub":1000000,"periods":1,"rate_unit":"пакет-год"}
+  ]
+}

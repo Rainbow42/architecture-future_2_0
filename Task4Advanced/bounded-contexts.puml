@@ -1,0 +1,87 @@
+@startuml
+title Будущее 2.0 — границы контекстов и продуктов данных
+left to right direction
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam defaultFontName Arial
+skinparam wrapWidth 210
+skinparam maxMessageSize 150
+
+package "Клинический контур\nне доступен общему BI" #FFF1F0 {
+  component "Реестр пациентов" as Patients
+  component "Запись и загрузка" as Appointments
+  component "Расчёты клиник" as Billing
+  component "Медицинская помощь" as Care
+  component "Медицинский ИИ" as AI
+  component "Сборщик разрешённых\nпродуктов клиник" as ClinicProducts #E5F5E0
+  Patients --> Appointments : PatientRegistered
+  Patients --> Care : пациент / права
+  Appointments --> Billing : резерв / отмена
+  Billing --> Appointments : оплата / возврат
+  Care --> AI : задание в защищённом API
+  AI --> Care : AIResearchCompleted
+  Appointments --> ClinicProducts : только загрузка филиалов
+  Billing --> ClinicProducts : только сводный оборот
+}
+
+package "Банковский контур" #FFF7DD {
+  component "Кредитование" as Credit
+  component "Банковский учёт" as Ledger
+  component "Сборщик агрегатов\nбанковского портфеля" as BankProducts #E5F5E0
+  Credit --> Ledger : запрос выдачи
+  Ledger --> Credit : выдача / отказ
+  Credit --> BankProducts : локальная проекция
+  Ledger --> BankProducts : сверенные суммы
+}
+
+package "Производство и логистика" #EDF3FF {
+  component "Фармацевтическое\nпроизводство" as Pharma
+  component "Производство\nэлектроники" as Devices
+  component "Снабжение и остатки" as Supply
+  component "Сборщик продуктов\nвыпуска и остатков" as ProductionProducts #E5F5E0
+  Pharma --> Supply : резерв / выпуск / отзыв
+  Devices --> Supply : резерв / выпуск / отзыв
+  Supply --> Pharma : результат резерва
+  Supply --> Devices : результат резерва
+  Pharma --> ProductionProducts : выпуск
+  Devices --> ProductionProducts : выпуск
+  Supply --> ProductionProducts : остатки
+}
+
+package "Общие разрешённые продукты" #E5F5E0 {
+  component "Проверка контракта\nи классификации" as Gate
+  component "Корпоративные финансы" as Finance
+  component "Каталог и доступ\nк аналитике" as Catalog
+  component "Портал / BI" as BI
+  Gate --> Catalog : DataProductPublished
+  Catalog --> Finance : сверенные сводки
+  Finance --> Catalog : закрытый период
+  Catalog --> BI : доступ по роли / региону
+}
+
+ClinicProducts --> Gate : разрешённый контракт
+BankProducts --> Gate : агрегаты без заёмщика
+ProductionProducts --> Gate : контракт выпуска / остатков
+component "Кадры, основные средства,\nбиллинг ресурсов ИИ" as Support
+Support --> Gate : сводные затраты\nбез персональных данных
+
+package "Временная совместимость" #EEEEEE {
+  component "SQL Server 2008 / Camel" as Legacy
+  component "Антикоррупционные\nадаптеры доменов" as ACL
+  Legacy --> ACL : экспорт / прикладной журнал
+}
+ACL ..> Appointments : преобразование старой модели
+ACL ..> Billing : преобразование старой модели
+
+note bottom of Care
+  Медкарты, история болезни, результаты и
+  ссылки на исследования не выходят в BI.
+  Между Care / AI и Gate нет канала публикации.
+end note
+
+legend bottom
+  Стрелка показывает контракт между контекстами, не общую БД.
+  Каждый домен владеет своей моделью и транзакциями.
+  Для нового производства подключается его контракт, а не новая логика DWH.
+endlegend
+@enduml
